@@ -12,7 +12,10 @@ import time
 import os
 
 
-
+defaults = {
+    'zcashd_host': '127.0.0.1',
+    'zcashd_port': '8232'
+    }
 
 
 
@@ -20,7 +23,9 @@ import os
 class mainwindow(QMainWindow):
     def __init__(self, parent = None):
         QMainWindow.__init__(self)
-        loadUi("untitled.ui", self)
+        loadUi("pyzcto.ui", self)
+        self.settings = {}
+        self.load_settings()
         fd = open(os.path.expanduser('~/.zcash/zcash.conf'))
         fdl = fd.readlines()
         fd.close()
@@ -56,6 +61,14 @@ class mainwindow(QMainWindow):
         self.timer.start(2000)
         self.update()
         self.show()
+        
+    def load_settings(self):
+        with open('pyzcto.conf','r') as fd:
+            options = [l.split('#')[0].split() for l in fd.readlines()]
+            for o in options:
+                self.settings[o[0]] = o[1]
+        self.line_host.setText(self.settings['zcashd_host'])
+        self.line_port.setText(self.settings['zcashd_port'])
         
     def check_is_send_correct(self):
         if self.get_send_data():
@@ -328,7 +341,7 @@ class mainwindow(QMainWindow):
     def updatereceive(self):
         shaddresses = self.callzcash('z_listaddresses')
         traddresses = self.callzcash('getaddressesbyaccount', [''])
-        addresses = traddresses+shaddresses
+        addresses = [str(self.callzcash('z_getbalance',[a]))+'\t' + a for a in traddresses+shaddresses]
         if self.recaddresses != addresses:
             self.recaddresses = addresses
             for ad in addresses:

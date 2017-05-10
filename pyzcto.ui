@@ -24,7 +24,7 @@
        <enum>QTabWidget::Rounded</enum>
       </property>
       <property name="currentIndex">
-       <number>0</number>
+       <number>5</number>
       </property>
       <widget class="QWidget" name="tab_accounts">
        <attribute name="title">
@@ -897,7 +897,7 @@
         <item row="0" column="3">
          <widget class="QLineEdit" name="line_host">
           <property name="text">
-           <string>127.0.0.1</string>
+           <string/>
           </property>
           <property name="alignment">
            <set>Qt::AlignRight|Qt::AlignTrailing|Qt::AlignVCenter</set>
@@ -927,7 +927,7 @@
         <item row="1" column="3">
          <widget class="QLineEdit" name="line_port">
           <property name="text">
-           <string>8232</string>
+           <string/>
           </property>
           <property name="alignment">
            <set>Qt::AlignRight|Qt::AlignTrailing|Qt::AlignVCenter</set>
