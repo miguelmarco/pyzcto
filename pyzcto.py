@@ -2,7 +2,7 @@
 
 import sys
 from PyQt5.QtCore import Qt, QProcess, QTimer
-from PyQt5.QtWidgets import QWidget, QApplication, QDialog, QMainWindow, QTableWidgetItem
+from PyQt5.QtWidgets import QWidget, QApplication, QDialog, QMainWindow, QTableWidgetItem, QHeaderView
 from PyQt5.QtGui import QPicture, QPixmap,QImage, QBrush, QColor
 from PyQt5.uic import loadUi
 import requests
@@ -11,14 +11,10 @@ import qrcode
 import time
 import os
 
-
 defaults = {
     'zcashd_host': '127.0.0.1',
     'zcashd_port': '8232'
     }
-
-
-
 
 class mainwindow(QMainWindow):
     def __init__(self, parent = None):
@@ -38,6 +34,12 @@ class mainwindow(QMainWindow):
         self.line_user.setText(username.replace('\n',''))
         self.line_password.setText(password.replace('\n',''))
         self.torproc = QProcess()
+        self.tableWidget_ownaddresses.horizontalHeader().setSectionResizeMode(QHeaderView.ResizeToContents)
+        self.tableWidget_otheraddresses.horizontalHeader().setSectionResizeMode(QHeaderView.ResizeToContents)
+        self.tableWidget_traddr.horizontalHeader().setSectionResizeMode(QHeaderView.ResizeToContents)
+        self.tableWidget_shaddr.horizontalHeader().setSectionResizeMode(QHeaderView.ResizeToContents)
+        self.transtable_input.horizontalHeader().setSectionResizeMode(QHeaderView.ResizeToContents)
+        self.transtable_output.horizontalHeader().setSectionResizeMode(QHeaderView.ResizeToContents)
         self.torconnectbutton.clicked.connect(self.torconnect)
         self.pushButton_newtr.clicked.connect(self.newtraddr)
         self.pushButton_newsh.clicked.connect(self.newshaddr)
@@ -47,21 +49,165 @@ class mainwindow(QMainWindow):
         self.line_receivedesc.textChanged.connect(self.geneartereceiveqr)
         self.plainTextEdit_sendmultiple.textChanged.connect(self.check_is_send_correct)
         self.comboBox_sendaccounts.currentIndexChanged.connect(self.check_is_send_correct)
-        self.line_sendaccount1.textChanged.connect(self.check_is_send_correct)
+        self.line_sendaccount1.currentTextChanged.connect(self.check_is_send_correct)
         self.line_fee.textChanged.connect(self.check_is_send_correct)
         self.line_sendamount1.textChanged.connect(self.check_is_send_correct)
         self.line_sendmemo1.textChanged.connect(self.check_is_send_correct)
+        self.transtable_input.clicked.connect(self.show_transaction_details)
+        self.transtable_output.clicked.connect(self.show_transaction_details)
+        self.pushButton_addotheraddress.clicked.connect(self.tableWidget_otheraddresses.insertRow,0)
+        self.pushButton_deleteotheraddress.clicked.connect(self.removerowfromaccounts)
+        self.tableWidget_otheraddresses.cellChanged.connect(self.updateotheraccounts)
+        self.tableWidget_otheraddresses.cellChanged.connect(self.updatelinesendaccount)
         self.tabWidget.setCurrentIndex(0)
         self.utxos = []
         self.shreceived = []
-        self.balances = []
-        self.recaddresses = []
+        self.balances = {}
+        self.addressesalias = {}
+        self.otheralias = {}
+        self.transactions = []
+        self.receiveaddresses = []
+        self.sendadrresses = []
+        self.readaliasesfromfile()
         self.timer = QTimer()
         self.timer.timeout.connect(self.update)
         self.timer.start(2000)
         self.update()
         self.show()
-        
+
+    def updateotheraccounts(self):
+        self.otheralias = {}
+        r = self.tableWidget_otheraddresses.rowCount()
+        for i in range(r):
+            try:
+                ad = self.tableWidget_otheraddresses.item(i,2).text()
+            except:
+                ad = '..'
+            if len(ad)<3:
+                ad = '..'
+            typ = ''
+            validate = 'validateaddress'
+            if ad[0]=='z':
+                typ = 'Shielded'
+                validate = 'z_validateaddress'
+            elif ad[1] in '1m':
+                typ = 'Transparent'
+            elif ad[1] in '23':
+                typ = 'Multisig'
+            try:
+                valid = self.callzcash(validate, [ad])['isvalid']
+                if not valid:
+                    typ = 'Invalid'
+            except:
+                typ = ''
+            if not  self.tableWidget_otheraddresses.item(i,0) or self.tableWidget_otheraddresses.item(i,0).text() != typ:
+                item = QTableWidgetItem(typ)
+                item.setTextAlignment(Qt.AlignRight)
+                item.setFlags(Qt.ItemFlags(97))
+                self.tableWidget_otheraddresses.setItem(i,0,item)
+            alias = self.tableWidget_otheraddresses.item(i,1)
+            if alias:
+                self.otheralias[ad]=alias.text()
+        with open('addresses.ext','w') as fd:
+            for ad in self.otheralias:
+                fd.write(ad+' '+self.otheralias[ad]+'\n')
+
+    def removerowfromaccounts(self):
+        self.tableWidget_otheraddresses.removeRow(self.tableWidget_otheraddresses.currentRow())
+        self.updateotheraccounts()
+        self.updatelinesendaccount()
+
+    def show_transaction_details(self):
+        table = self.sender()
+        row = table.currentRow()
+        txid = str(table.item(row, 3).text())
+        data = self.callzcash('gettransaction', [txid])
+        self.transtext.clear()
+        self.transtext.appendPlainText(json.dumps(data, indent=4))
+
+    def get_balances(self):
+        zaddresses = self.callzcash('z_listaddresses')
+        unspent = self.callzcash('listunspent')
+        traddresses = list(set([us['address'] for us in unspent if us['spendable']]))
+        addresses = zaddresses + traddresses
+        bals = {}
+        for ad in addresses:
+            bal = self.callzcash('z_getbalance', [ad])
+            bal = str(bal)
+            #bal += (14-len(str(bal)))*' '
+            bals[ad]=bal
+        return bals
+
+    def get_utxos(self):
+        unspent = reversed(sorted([(u['confirmations'],u['address'], u['amount']) for u in self.callzcash('listunspent')]))
+        unspent = [(u[1], u[2], colorfromconfs(u[0])) for u in unspent]
+        return unspent
+
+    def get_shreceieved(self):
+        shaddreses = self.callzcash('z_listaddresses')
+        shtxs = []
+        for shad in shaddreses:
+            txs = self.callzcash('z_listreceivedbyaddress', [shad])
+            for tx in txs:
+                txdata = self.callzcash('gettransaction', [tx['txid']])
+                memofield = bytearray.fromhex(tx['memo'])
+                if memofield[0] == 246:
+                    memofield = ''
+                else:
+                    memofield = memofield.decode().split('\x00')[0]
+                shtxs.append((txdata['confirmations'], shad, tx['amount'], memofield))
+        shtxs = [(t[1], t[2], t[3], colorfromconfs(t[0])) for t in reversed(sorted(shtxs))]
+        return shtxs
+
+    def get_aliases(self):
+        aliases = {}
+        rows = self.tableWidget_ownaddresses.rowCount()
+        for r in range(rows):
+            ad = str(self.tableWidget_ownaddresses.item(r,3).text())
+            al = self.tableWidget_ownaddresses.item(r,2).text()
+            if al:
+                aliases[ad]=al
+        return aliases
+
+    def readaliasesfromfile(self):
+        with open('addresses') as fd:
+            lines = fd.readlines()
+            for line in lines:
+                address = line.split()[0]
+                alias = line[len(address)+1:].replace('\n','')
+                self.addressesalias[address]=alias
+        otheralias = {}
+        with open('addresses.ext') as fd:
+            lines = fd.readlines()
+            for line in lines:
+                address = line.split()[0]
+                alias = line[len(address)+1:].replace('\n','')
+                otheralias[address]=alias
+        self.tableWidget_otheraddresses.setRowCount(0)
+        for ad in otheralias:
+            self.tableWidget_otheraddresses.insertRow(0)
+            alias = otheralias[ad]
+            if alias == ad:
+                alias = ''
+            item = QTableWidgetItem(alias)
+            item.setTextAlignment(Qt.AlignRight)
+            self.tableWidget_otheraddresses.setItem(0,1,item)
+            item = QTableWidgetItem(ad)
+            self.tableWidget_otheraddresses.setItem(0,2,item)
+
+    def aliasofaddress(self, address):
+        if address in self.addressesalias:
+            return self.addressesalias[address]
+        elif address in self.otheralias:
+            return self.otheralias[address]
+        else:
+            return address
+
+    def savealiases(self):
+        with open('addresses','w') as fd:
+            for ad in self.addressesalias:
+                fd.write(ad+' '+self.addressesalias[ad]+'\n')
+
     def load_settings(self):
         with open('pyzcto.conf','r') as fd:
             options = [l.split('#')[0].split() for l in fd.readlines()]
@@ -69,18 +215,26 @@ class mainwindow(QMainWindow):
                 self.settings[o[0]] = o[1]
         self.line_host.setText(self.settings['zcashd_host'])
         self.line_port.setText(self.settings['zcashd_port'])
-        
+
     def check_is_send_correct(self):
         if self.get_send_data():
             self.sendButton.setEnabled(True)
         else:
             self.sendButton.setEnabled(False)
-    
+
+    def updatelinesendaccount(self):
+        self.line_sendaccount1.clear()
+        self.line_sendaccount1.addItem('')
+        for al in self.addressesalias:
+            self.line_sendaccount1.addItem(self.aliasofaddress(al)+'\t'+al)
+        for al in self.otheralias:
+            self.line_sendaccount1.addItem(self.otheralias[al]+'\t'+al)
+
     def get_send_data(self):
         send_data = []
         if self.tabWidget_send.currentIndex() == 0:
             try:
-                sendaddr = str(self.line_sendaccount1.text())
+                sendaddr = str(self.line_sendaccount1.currentText()).split()[-1]
                 availablefunds =  float(str(self.comboBox_sendaccounts.currentText()).split()[0])
                 sendamount = float(str(self.line_sendamount1.text()))
                 fee = float(str(self.line_fee.text()))
@@ -155,41 +309,56 @@ class mainwindow(QMainWindow):
             if fee > availablefunds:
                 return False
         return send_data
-    
+
     def update(self):
+        tocall = set([])
         try:
-            self.updatetrs()
-            #self.updatehistorial()
-            self.updatereceive()
-            self.updatesendlist()
+            transactions = self.gettransactions()
+            if transactions != self.transactions:
+                self.transactions = transactions
+                tocall.add(self.updatehistorial)
+            aliases = self.get_aliases()
+            if self.tableWidget_ownaddresses.rowCount()>0 and self.addressesalias != aliases:
+                self.addressesalias = aliases
+                tocall.add(self.updatereceive)
+                tocall.add(self.updatesendlist)
+                tocall.add(self.updatetrs)
+                tocall.add(self.updatehistorial)
+                tocall.add(self.savealiases)
+                tocall.add(self.updatelinesendaccount)
+            utxos = self.get_utxos()
+            if utxos != self.utxos:
+                tocall.add(self.updatetrs)
+                self.utxos = utxos
+            shreceived = self.get_shreceieved()
+            if shreceived != self.shreceived:
+                self.shreceived = shreceived
+                tocall.add(self.updatetrs)
+            balances = self.get_balances()
+            if balances != self.balances:
+                self.balances = balances
+                tocall.add(self.updatesendlist)
+                tocall.add(self.updatereceive)
+                tocall.add(self.updatealiases)
+            for c in tocall:
+                c.__call__()
             self.updatestatus()
             self.statusBar.showMessage('Conected to {}:{}'.format(self.line_host.text(), self.line_port.text()))
         except:
             self.statusBar.showMessage('Not connected to daemon. Please check settings')
-     
+
     def updatesendlist(self):
-        if self.tabWidget_send.currentIndex() == 0:
-            zaddresses = self.callzcash('z_listaddresses')
-            unspent = self.callzcash('listunspent')
-            traddresses = list(set([us['address'] for us in unspent if us['spendable']]))
-            addresses = zaddresses + traddresses
-            bals = []
-            for ad in addresses:
-                bal = self.callzcash('z_getbalance', [ad])
-                bal = str(bal) + '\t'
-                #bal += (14-len(str(bal)))*' '
-                bals.append(bal+ad)
-            if bals != self.balances:
-                self.balances = bals
-                self.comboBox_sendaccounts.clear()
-                for bal in bals:
-                    self.comboBox_sendaccounts.addItem(bal)
-            
+        self.sendadrresses = []
+        self.comboBox_sendaccounts.clear()
+        for bal in self.balances:
+            self.comboBox_sendaccounts.addItem(self.balances[bal]+ '\t' +self.aliasofaddress(bal))
+            self.sendadrresses.append(bal)
+
     def send(self):
         params = self.get_send_data()
         if not params:
             return
-        fromaddress = str(self.comboBox_sendaccounts.currentText()).split()[-1]
+        fromaddress = self.sendadrresses[self.comboBox_sendaccounts.currentIndex()]
         try:
             fee = float(str(self.line_fee.text()))
         except:
@@ -197,17 +366,20 @@ class mainwindow(QMainWindow):
         op = self.callzcash('z_sendmany', [fromaddress, params, 1, fee])
         self.donetext.appendPlainText(op)
         self.sendButton.setEnabled(False)
-    
-        
+
     def updatestatus(self):
         opresults = self.callzcash('z_getoperationresult')
         if opresults:
-            self.donetext.appendPlainText(str(opresults))
+            self.donetext.appendPlainText(json.dumps(opresults,indent=4))
         opstatus = self.callzcash('z_getoperationstatus')
-        self.statustext.clear()
         if opstatus:
-            self.statustext.appendPlainText(str(opstatus))
-    
+            opstr = json.dumps(opstatus,indent=4)
+            if str(self.statustext.toPlainText()) != opstr:
+                self.statustext.clear()
+                self.statustext.appendPlainText(opstr)
+        else:
+            self.statustext.clear()
+
     def newtraddr(self):
         self.callzcash('getnewaddress')
         self.listaddresses_receive.clear()
@@ -217,8 +389,7 @@ class mainwindow(QMainWindow):
         self.callzcash('z_getnewaddress')
         self.listaddresses_receive.clear()
         self.update()
-        
-        
+
     def torconnect(self):
         if self.torconnectbutton.text() == '&Connect':
             self.torproc.setProcessChannelMode(QProcess.MergedChannels)
@@ -248,108 +419,130 @@ class mainwindow(QMainWindow):
             self.torconnectbutton.setText('&Connect')
             self.onionlabel.hide()
             self.onionlabelname.hide()
-        
+
     def updatetor(self):
         self.torconsole.appendPlainText(str(self.torproc.readAllStandardOutput()))
-        
-    def updatehistorial(self):
+
+    def gettransactions(self):
+        trans = []
         transactions = self.callzcash('listtransactions', ['',1000])
-        rw = 0
         for tx in transactions:
-            if tx['category']=='receive':
+            if 'address' in tx:
+                address = tx['address']
+            else:
+                address = False
+            tx2 = [tx['category'], tx['txid'], tx['time'], address, tx['amount']]
+            trans.append(tx2)
+        return trans
+
+    def updatehistorial(self):
+        rw = 0
+        self.transtable_input.setRowCount(0)
+        self.transtable_output.setRowCount(0)
+        for tx in self.transactions:
+            if tx[0]=='receive':
                 table = self.transtable_input
-            elif tx['category'] == 'send':
+            elif tx[0] == 'send':
                 table = self.transtable_output
             else:
                 continue
             table.insertRow(rw)
-            item = QTableWidgetItem(tx['txid'])
+            item = QTableWidgetItem(tx[1])
             item.setFlags(Qt.ItemFlags(97))
             table.setItem(rw, 3, item)
-            timet = time.strftime('%b %d %Y, %H:%M', time.localtime(tx['time']))
+            timet = time.strftime('%b %d %Y, %H:%M', time.localtime(tx[2]))
             item = QTableWidgetItem(timet)
             item.setFlags(Qt.ItemFlags(97))
             table.setItem(rw, 0, item)
-            if 'address' in tx:
-                item = QTableWidgetItem(tx['address'])
+            if tx[2]:
+                item = QTableWidgetItem(self.aliasofaddress(tx[3]))
                 item.setFlags(Qt.ItemFlags(97))
                 table.setItem(rw, 1, item)
-            item = QTableWidgetItem(str(tx['amount']))
+            item = QTableWidgetItem(str(tx[4]))
             item.setFlags(Qt.ItemFlags(97))
             table.setItem(rw, 2, item)
-        self.transtable_input.resizeColumnsToContents()
-        self.transtable_output.resizeColumnsToContents()
-        
-    
+        #self.transtable_input.resizeColumnsToContents()
+        #self.transtable_output.resizeColumnsToContents()
+
     def updatetrs(self):
-        unspent = reversed(sorted([(u['confirmations'],u['address'], u['amount']) for u in self.callzcash('listunspent')]))
-        unspent = [(u[1], u[2], colorfromconfs(u[0])) for u in unspent]
-        shaddreses = self.callzcash('z_listaddresses')
-        shtxs = []
-        shbalance = 0.0
-        for shad in shaddreses:
-            txs = self.callzcash('z_listreceivedbyaddress', [shad])
-            shbalance += self.callzcash('z_getbalance', [shad])
-            for tx in txs:
-                txdata = self.callzcash('gettransaction', [tx['txid']])
-                memofield = bytearray.fromhex(tx['memo'])
-                if memofield[0] == 246:
-                    memofield = ''
-                else:
-                    memofield = memofield.decode().split('\x00')[0]
-                shtxs.append((txdata['confirmations'], shad, tx['amount'], memofield))
-        shtxs = [(t[1], t[2], t[3], colorfromconfs(t[0])) for t in reversed(sorted(shtxs))]
-        if unspent != self.utxos or shtxs != self.shreceived:
-            self.utxos = unspent
-            self.tableWidget_traddr.setRowCount(0)
-            trbalance = 0.0
-            for us in self.utxos:
-                self.tableWidget_traddr.insertRow(0)
-                trbalance += us[1]
-                item = QTableWidgetItem(us[0])
-                item.setFlags(Qt.ItemFlags(97))
-                item.setBackground(QBrush(QColor(us[-1][0],us[-1][1],us[-1][2])))
-                self.tableWidget_traddr.setItem(0, 0, item)
-                item = QTableWidgetItem(str(us[1]))
-                item.setFlags(Qt.ItemFlags(97))
-                item.setTextAlignment(Qt.AlignRight)
-                item.setBackground(QBrush(QColor(us[-1][0],us[-1][1],us[-1][2])))
-                self.tableWidget_traddr.setItem(0, 1, item)
-            self.label_transparent_balance.setText('Transparent balance: {}'.format(trbalance))
-            self.tableWidget_traddr.resizeColumnsToContents()
-            self.shreceived = shtxs
-            self.tableWidget_shaddr.setRowCount(0)
-            for tr in shtxs:
-                self.tableWidget_shaddr.insertRow(0)
-                item = QTableWidgetItem(tr[0])
-                item.setFlags(Qt.ItemFlags(97))
-                if len(tr[2])>1:
-                    item.setToolTip(tr[2])
-                item.setBackground(QBrush(QColor(tr[-1][0],tr[-1][1],tr[-1][2])))
-                self.tableWidget_shaddr.setItem(0, 0, item)
-                item = QTableWidgetItem(str(tr[1]))
-                item.setFlags(Qt.ItemFlags(97))
-                item.setTextAlignment(Qt.AlignRight)
-                if len(tr[2])>1:
-                    item.setToolTip(tr[2])
-                item.setBackground(QBrush(QColor(tr[-1][0],tr[-1][1],tr[-1][2])))
-                self.tableWidget_shaddr.setItem(0, 1, item)
-            self.tableWidget_shaddr.resizeColumnsToContents()
-            self.label_shielded_balance.setText('Shielded balance: {}'.format(shbalance))
-            self.label_total_balance.setText('Total balance: {}'.format(shbalance+trbalance))
-    
+        self.tableWidget_traddr.setRowCount(0)
+        trbalance = 0.0
+        shbalance = float(self.callzcash('z_gettotalbalance')['private'])
+        for us in self.utxos:
+            self.tableWidget_traddr.insertRow(0)
+            trbalance += us[1]
+            item = QTableWidgetItem(self.aliasofaddress(us[0]))
+            item.setFlags(Qt.ItemFlags(97))
+            item.setBackground(QBrush(QColor(us[-1][0],us[-1][1],us[-1][2])))
+            self.tableWidget_traddr.setItem(0, 0, item)
+            item = QTableWidgetItem(str(us[1]))
+            item.setFlags(Qt.ItemFlags(97))
+            item.setTextAlignment(Qt.AlignRight)
+            item.setBackground(QBrush(QColor(us[-1][0],us[-1][1],us[-1][2])))
+            self.tableWidget_traddr.setItem(0, 1, item)
+        self.label_transparent_balance.setText('Transparent balance: {}'.format(trbalance))
+        #self.tableWidget_traddr.resizeColumnsToContents()
+        self.tableWidget_shaddr.setRowCount(0)
+        for tr in self.shreceived:
+            self.tableWidget_shaddr.insertRow(0)
+            item = QTableWidgetItem(self.aliasofaddress(tr[0]))
+            item.setFlags(Qt.ItemFlags(97))
+            if len(tr[2])>1:
+                item.setToolTip(tr[2])
+            item.setBackground(QBrush(QColor(tr[-1][0],tr[-1][1],tr[-1][2])))
+            self.tableWidget_shaddr.setItem(0, 0, item)
+            item = QTableWidgetItem(str(tr[1]))
+            item.setFlags(Qt.ItemFlags(97))
+            item.setTextAlignment(Qt.AlignRight)
+            if len(tr[2])>1:
+                item.setToolTip(tr[2])
+            item.setBackground(QBrush(QColor(tr[-1][0],tr[-1][1],tr[-1][2])))
+            self.tableWidget_shaddr.setItem(0, 1, item)
+        #self.tableWidget_shaddr.resizeColumnsToContents()
+        self.label_shielded_balance.setText('Shielded balance: {}'.format(shbalance))
+        self.label_total_balance.setText('Total balance: {}'.format(shbalance+trbalance))
+
+    def updatealiases(self):
+        self.tableWidget_ownaddresses.setRowCount(0)
+        for ad in self.balances:
+            bal = self.balances[ad]
+            self.tableWidget_ownaddresses.insertRow(0)
+            item = QTableWidgetItem(bal)
+            item.setTextAlignment(Qt.AlignRight)
+            item.setFlags(Qt.ItemFlags(97))
+            self.tableWidget_ownaddresses.setItem(0,0,item)
+            typ = ''
+            if ad[0]=='z':
+                typ = 'Shielded'
+            elif ad[1] in '1m':
+                typ = 'Transparent'
+            elif ad[1] in '23':
+                typ = 'Multisig'
+            item = QTableWidgetItem(typ)
+            item.setTextAlignment(Qt.AlignRight)
+            item.setFlags(Qt.ItemFlags(97))
+            self.tableWidget_ownaddresses.setItem(0,1,item)
+            alias = self.aliasofaddress(ad)
+            if alias == ad:
+                alias = ''
+            item = QTableWidgetItem(alias)
+            #item.setTextAlignment(Qt.AlignRight)
+            self.tableWidget_ownaddresses.setItem(0,2,item)
+            item = QTableWidgetItem(ad)
+            item.setFlags(Qt.ItemFlags(97))
+            self.tableWidget_ownaddresses.setItem(0,3,item)
+
     def updatereceive(self):
-        shaddresses = self.callzcash('z_listaddresses')
-        traddresses = self.callzcash('getaddressesbyaccount', [''])
-        addresses = [str(self.callzcash('z_getbalance',[a]))+'\t' + a for a in traddresses+shaddresses]
-        if self.recaddresses != addresses:
-            self.recaddresses = addresses
-            for ad in addresses:
-                self.listaddresses_receive.insertItem(0, ad)
-                
+        self.listaddresses_receive.clear()
+        self.receiveaddresses = []
+        for ad in self.balances:
+            bal = self.balances[ad]
+            self.receiveaddresses= [ad]+self.receiveaddresses
+            self.listaddresses_receive.insertItem(0, bal+'\t'+self.aliasofaddress(ad))
+
     def geneartereceiveqr(self):
         try:
-            address = self.listaddresses_receive.currentItem().text()
+            address = self.receiveaddresses[self.listaddresses_receive.currentIndex().row()]
         except:
             address = ''
         amount = self.line_receiveamount.text()
@@ -375,8 +568,6 @@ class mainwindow(QMainWindow):
         else:
             self.label_qrreceive.hide()
             self.label_textreceive.hide()
-        
-        
 
     def callzcash(self, method, params = []):
         url='http://'+str(self.line_host.text()) + ':' + str(self.line_port.text())
@@ -394,7 +585,7 @@ def colorfromconfs(confs):
         return (205,255,205)
     else:
         return (255 - 2*confs, 205+2*confs, 205)
-        
+
 if __name__ == "__main__":
 
     app = QApplication(sys.argv)
