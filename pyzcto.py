@@ -6,10 +6,11 @@ from PyQt5.QtWidgets import QWidget, QApplication, QDialog, QMainWindow, QTableW
 from PyQt5.QtGui import QPicture, QPixmap,QImage, QBrush, QColor
 from PyQt5.uic import loadUi
 import requests
-import json
+import simplejson
 import qrcode
 import time
 import os
+from decimal import Decimal
 
 defaults = {
     'zcashd_host': '127.0.0.1',
@@ -59,6 +60,9 @@ class mainwindow(QMainWindow):
         self.pushButton_deleteotheraddress.clicked.connect(self.removerowfromaccounts)
         self.tableWidget_otheraddresses.cellChanged.connect(self.updateotheraccounts)
         self.tableWidget_otheraddresses.cellChanged.connect(self.updatelinesendaccount)
+        self.plainTextEdit_multisigkeys.textChanged.connect(self.generatemultisig)
+        self.spinBox_multisign.valueChanged.connect(self.generatemultisig)
+        self.plainTextEdit_spendscript.textChanged.connect(self.verifymultisig)
         self.tabWidget.setCurrentIndex(0)
         self.utxos = []
         self.shreceived = []
@@ -74,6 +78,48 @@ class mainwindow(QMainWindow):
         self.timer.start(2000)
         self.update()
         self.show()
+
+    def generatemultisig(self):
+        try:
+            n = self.spinBox_multisign.value()
+            addresses = str(self.plainTextEdit_multisigkeys.toPlainText()).splitlines()
+            self.spinBox_multisign.valueChanged.disconnect(self.generatemultisig)
+            self.spinBox_multisign.setMaximum(len(addresses))
+            self.spinBox_multisign.valueChanged.connect(self.generatemultisig)
+            self.plainTextEdit_spendscript.textChanged.disconnect(self.verifymultisig)
+            res = self.callzcash('createmultisig',[n, addresses])
+            self.lineEdit_multisigaddress.setText(res['address'])
+            self.plainTextEdit_spendscript.clear()
+            self.plainTextEdit_spendscript.appendPlainText(res['redeemScript'])
+            self.plainTextEdit_spendscript.textChanged.connect(self.verifymultisig)
+        except:
+            self.plainTextEdit_spendscript.textChanged.disconnect(self.verifymultisig)
+            self.lineEdit_multisigaddress.clear()
+            self.plainTextEdit_spendscript.clear()
+            self.plainTextEdit_spendscript.textChanged.connect(self.verifymultisig)
+
+
+    def verifymultisig(self):
+        try:
+            script = str(self.plainTextEdit_spendscript.toPlainText())
+            res = self.callzcash('decodescript', [script])
+            self.plainTextEdit_multisigkeys.textChanged.disconnect(self.generatemultisig)
+            self.plainTextEdit_multisigkeys.clear()
+            for l in res['addresses']:
+                self.plainTextEdit_multisigkeys.appendPlainText(l)
+            self.plainTextEdit_multisigkeys.textChanged.connect(self.generatemultisig)
+            self.spinBox_multisign.valueChanged.disconnect(self.generatemultisig)
+            self.spinBox_multisign.setMaximum(len(res['addresses']))
+            self.spinBox_multisign.setValue(res['reqSigs'])
+            self.spinBox_multisign.valueChanged.connect(self.generatemultisig)
+            self.lineEdit_multisigaddress.setText(res['p2sh'])
+        except:
+            self.lineEdit_multisigaddress.clear()
+            self.plainTextEdit_multisigkeys.textChanged.disconnect(self.generatemultisig)
+            self.plainTextEdit_multisigkeys.clear()
+            self.plainTextEdit_multisigkeys.textChanged.connect(self.generatemultisig)
+
+
 
     def updateotheraccounts(self):
         self.otheralias = {}
@@ -123,7 +169,7 @@ class mainwindow(QMainWindow):
         txid = str(table.item(row, 3).text())
         data = self.callzcash('gettransaction', [txid])
         self.transtext.clear()
-        self.transtext.appendPlainText(json.dumps(data, indent=4))
+        self.transtext.appendPlainText(simplejson.dumps(data, indent=4))
 
     def get_balances(self):
         zaddresses = self.callzcash('z_listaddresses')
@@ -235,9 +281,9 @@ class mainwindow(QMainWindow):
         if self.tabWidget_send.currentIndex() == 0:
             try:
                 sendaddr = str(self.line_sendaccount1.currentText()).split()[-1]
-                availablefunds =  float(str(self.comboBox_sendaccounts.currentText()).split()[0])
-                sendamount = float(str(self.line_sendamount1.text()))
-                fee = float(str(self.line_fee.text()))
+                availablefunds =  Decimal(str(self.comboBox_sendaccounts.currentText()).split()[0])
+                sendamount = Decimal(str(self.line_sendamount1.text()))
+                fee = Decimal(str(self.line_fee.text()))
                 memo = str(self.line_sendmemo1.text())
                 is_zaddr = sendaddr[0] == 'z'
                 if memo:
@@ -266,13 +312,13 @@ class mainwindow(QMainWindow):
             if not lines:
                 return False
             try:
-                availablefunds =  float(str(self.comboBox_sendaccounts.currentText()).split()[0])
-                fee = float(str(self.line_fee.text()))
+                availablefunds =  Decimal(str(self.comboBox_sendaccounts.currentText()).split()[0])
+                fee = Decimal(str(self.line_fee.text()))
                 for line in lines.split('\n'):
                     if ',' in line:
                         parsedline = line.split(',')
                         address = parsedline[0].replace(' ','')
-                        value = float(parsedline[1].replace(' ',''))
+                        value = Decimal(parsedline[1].replace(' ',''))
                         if len(parsedline)>2:
                             memo = parsedline[2]
                             if memo:
@@ -286,7 +332,7 @@ class mainwindow(QMainWindow):
                         prot = prot[1].split('?')
                         address = prot[0]
                         values = {k.split('=')[0]:k.split('=')[1] for k in prot[1].split('&')}
-                        value = float(values['amount'])
+                        value = Decimal(values['amount'])
                         memo = 'message' in values and values['message']
                         if memo:
                             memo = values['message']
@@ -312,6 +358,37 @@ class mainwindow(QMainWindow):
 
     def update(self):
         tocall = set([])
+        transactions = self.gettransactions()
+        if transactions != self.transactions:
+            self.transactions = transactions
+            tocall.add(self.updatehistorial)
+        aliases = self.get_aliases()
+        if self.tableWidget_ownaddresses.rowCount()>0 and self.addressesalias != aliases:
+            self.addressesalias = aliases
+            tocall.add(self.updatereceive)
+            tocall.add(self.updatesendlist)
+            tocall.add(self.updatetrs)
+            tocall.add(self.updatehistorial)
+            tocall.add(self.savealiases)
+            tocall.add(self.updatelinesendaccount)
+        utxos = self.get_utxos()
+        if utxos != self.utxos:
+            tocall.add(self.updatetrs)
+            self.utxos = utxos
+        shreceived = self.get_shreceieved()
+        if shreceived != self.shreceived:
+            self.shreceived = shreceived
+            tocall.add(self.updatetrs)
+        balances = self.get_balances()
+        if balances != self.balances:
+            self.balances = balances
+            tocall.add(self.updatesendlist)
+            tocall.add(self.updatereceive)
+            tocall.add(self.updatealiases)
+        for c in tocall:
+            c.__call__()
+        self.updatestatus()
+        self.statusBar.showMessage('Conected to {}:{}'.format(self.line_host.text(), self.line_port.text()))
         try:
             transactions = self.gettransactions()
             if transactions != self.transactions:
@@ -360,7 +437,7 @@ class mainwindow(QMainWindow):
             return
         fromaddress = self.sendadrresses[self.comboBox_sendaccounts.currentIndex()]
         try:
-            fee = float(str(self.line_fee.text()))
+            fee = Decimal(str(self.line_fee.text()))
         except:
             return
         op = self.callzcash('z_sendmany', [fromaddress, params, 1, fee])
@@ -370,10 +447,10 @@ class mainwindow(QMainWindow):
     def updatestatus(self):
         opresults = self.callzcash('z_getoperationresult')
         if opresults:
-            self.donetext.appendPlainText(json.dumps(opresults,indent=4))
+            self.donetext.appendPlainText(simplejson.dumps(opresults,indent=4))
         opstatus = self.callzcash('z_getoperationstatus')
         if opstatus:
-            opstr = json.dumps(opstatus,indent=4)
+            opstr = simplejson.dumps(opstatus,indent=4)
             if str(self.statustext.toPlainText()) != opstr:
                 self.statustext.clear()
                 self.statustext.appendPlainText(opstr)
@@ -466,8 +543,8 @@ class mainwindow(QMainWindow):
 
     def updatetrs(self):
         self.tableWidget_traddr.setRowCount(0)
-        trbalance = 0.0
-        shbalance = float(self.callzcash('z_gettotalbalance')['private'])
+        trbalance = Decimal('0.0')
+        shbalance = Decimal(self.callzcash('z_gettotalbalance')['private'])
         for us in self.utxos:
             self.tableWidget_traddr.insertRow(0)
             trbalance += us[1]
@@ -576,9 +653,9 @@ class mainwindow(QMainWindow):
         user = user.encode('utf8')
         passwd = passwd.encode('utf8')
         timeout = 600
-        jsondata = json.dumps({'version':'2', 'method': method, 'params': params, 'id': 0})
+        jsondata = simplejson.dumps({'version':'2', 'method': method, 'params': params, 'id': 0})
         r = requests.post(url, auth=(user,passwd), data=jsondata, timeout=timeout)
-        return r.json()['result']
+        return simplejson.loads(r.text, use_decimal=True)['result']
 
 def colorfromconfs(confs):
     if confs>25:
