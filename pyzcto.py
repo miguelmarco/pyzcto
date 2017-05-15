@@ -41,6 +41,7 @@ class mainwindow(QMainWindow):
         self.tableWidget_shaddr.horizontalHeader().setSectionResizeMode(QHeaderView.ResizeToContents)
         self.transtable_input.horizontalHeader().setSectionResizeMode(QHeaderView.ResizeToContents)
         self.transtable_output.horizontalHeader().setSectionResizeMode(QHeaderView.ResizeToContents)
+        self.pushButton_importmultisig.setEnabled(False)
         self.torconnectbutton.clicked.connect(self.torconnect)
         self.pushButton_newtr.clicked.connect(self.newtraddr)
         self.pushButton_newsh.clicked.connect(self.newshaddr)
@@ -83,18 +84,33 @@ class mainwindow(QMainWindow):
         try:
             n = self.spinBox_multisign.value()
             addresses = str(self.plainTextEdit_multisigkeys.toPlainText()).splitlines()
-            self.spinBox_multisign.valueChanged.disconnect(self.generatemultisig)
+            try:
+                self.spinBox_multisign.valueChanged.disconnect(self.generatemultisig)
+            except:
+                pass
             self.spinBox_multisign.setMaximum(len(addresses))
             self.spinBox_multisign.valueChanged.connect(self.generatemultisig)
-            self.plainTextEdit_spendscript.textChanged.disconnect(self.verifymultisig)
+            try:
+                self.plainTextEdit_spendscript.textChanged.disconnect(self.verifymultisig)
+            except:
+                pass
             res = self.callzcash('createmultisig',[n, addresses])
             self.lineEdit_multisigaddress.setText(res['address'])
+            availableaddresses = self.callzcash('getaddressesbyaccount', [""])
+            if res['address'] in availableaddresses:
+                self.pushButton_importmultisig.setEnabled(False)
+            else:
+                self.pushButton_importmultisig.setEnabled(True)
             self.plainTextEdit_spendscript.clear()
             self.plainTextEdit_spendscript.appendPlainText(res['redeemScript'])
             self.plainTextEdit_spendscript.textChanged.connect(self.verifymultisig)
         except:
-            self.plainTextEdit_spendscript.textChanged.disconnect(self.verifymultisig)
+            try:
+                self.plainTextEdit_spendscript.textChanged.disconnect(self.verifymultisig)
+            except:
+                pass
             self.lineEdit_multisigaddress.clear()
+            self.pushButton_importmultisig.setEnabled(False)
             self.plainTextEdit_spendscript.clear()
             self.plainTextEdit_spendscript.textChanged.connect(self.verifymultisig)
 
@@ -103,7 +119,10 @@ class mainwindow(QMainWindow):
         try:
             script = str(self.plainTextEdit_spendscript.toPlainText())
             res = self.callzcash('decodescript', [script])
-            self.plainTextEdit_multisigkeys.textChanged.disconnect(self.generatemultisig)
+            try:
+                self.plainTextEdit_multisigkeys.textChanged.disconnect(self.generatemultisig)
+            except:
+                pass
             self.plainTextEdit_multisigkeys.clear()
             for l in res['addresses']:
                 self.plainTextEdit_multisigkeys.appendPlainText(l)
@@ -113,9 +132,18 @@ class mainwindow(QMainWindow):
             self.spinBox_multisign.setValue(res['reqSigs'])
             self.spinBox_multisign.valueChanged.connect(self.generatemultisig)
             self.lineEdit_multisigaddress.setText(res['p2sh'])
+            availableaddresses = self.callzcash('getaddressesbyaccount', [""])
+            if res['p2sh'] in availableaddresses:
+                self.pushButton_importmultisig.setEnabled(False)
+            else:
+                self.pushButton_importmultisig.setEnabled(True)
         except:
             self.lineEdit_multisigaddress.clear()
-            self.plainTextEdit_multisigkeys.textChanged.disconnect(self.generatemultisig)
+            self.pushButton_importmultisig.setEnabled(False)
+            try:
+                self.plainTextEdit_multisigkeys.textChanged.disconnect(self.generatemultisig)
+            except:
+                pass
             self.plainTextEdit_multisigkeys.clear()
             self.plainTextEdit_multisigkeys.textChanged.connect(self.generatemultisig)
 
@@ -502,7 +530,7 @@ class mainwindow(QMainWindow):
 
     def gettransactions(self):
         trans = []
-        transactions = self.callzcash('listtransactions', ['',1000])
+        transactions = self.callzcash('listtransactions', ['', 1000])
         for tx in transactions:
             if 'address' in tx:
                 address = tx['address']
