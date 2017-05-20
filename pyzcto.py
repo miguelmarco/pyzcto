@@ -42,6 +42,7 @@ class mainwindow(QMainWindow):
         self.transtable_input.horizontalHeader().setSectionResizeMode(QHeaderView.ResizeToContents)
         self.transtable_output.horizontalHeader().setSectionResizeMode(QHeaderView.ResizeToContents)
         self.pushButton_importmultisig.setEnabled(False)
+        self.pushButton_importmultisig.clicked.connect(self.importmultisig)
         self.torconnectbutton.clicked.connect(self.torconnect)
         self.pushButton_newtr.clicked.connect(self.newtraddr)
         self.pushButton_newsh.clicked.connect(self.newshaddr)
@@ -64,6 +65,13 @@ class mainwindow(QMainWindow):
         self.plainTextEdit_multisigkeys.textChanged.connect(self.generatemultisig)
         self.spinBox_multisign.valueChanged.connect(self.generatemultisig)
         self.plainTextEdit_spendscript.textChanged.connect(self.verifymultisig)
+        self.plainTextEdit_to_address_ms.textChanged.connect(self.createmultisigtx)
+        self.comboBox_from_addr_ms.currentTextChanged.connect(self.createmultisigtx)
+        self.plainTextEdit_raw_ms_tx.textChanged.connect(self.parserawhex)
+        self.pushButton_ms_sign.clicked.connect(self.signrawtransaction)
+        self.pushButton_ms_broadcast.clicked.connect(self.broadcastrawtransaction)
+        self.tableWidget_ownaddresses.horizontalHeader().sectionClicked.connect(self.tableWidget_ownaddresses.sortByColumn)
+        self.pushButton_add_multisig_addr.clicked.connect(self.addmultisigaddrtolist)
         self.tabWidget.setCurrentIndex(0)
         self.utxos = []
         self.shreceived = []
@@ -79,6 +87,69 @@ class mainwindow(QMainWindow):
         self.timer.start(2000)
         self.update()
         self.show()
+
+    def createmultisigtx(self):
+        try:
+            fromaddress = self.comboBox_from_addr_ms.currentText().split()[-1]
+            fee = Decimal(self.lineEdit_ms_fee.text())
+            destinations = {}
+            totalout = fee
+            for l in self.plainTextEdit_to_address_ms.toPlainText().splitlines():
+                address = l.split(',')[0]
+                amount = Decimal(l.split(',')[1])
+                totalout += amount
+                destinations[address]=amount
+            txouts = self.callzcash('listunspent', [1, 999999999, [fromaddress]])
+            totalin = Decimal('0')
+            txins = []
+            while totalin < totalout:
+                txout = txouts.pop()
+                if txout['spendable']:
+                    totalin += txout['amount']
+                    txid = txout['txid']
+                    vout = txout['vout']
+                    txins.append({'txid':txid, 'vout':vout})
+            change = totalin-totalout
+            destinations[fromaddress] = change
+            rawtrans = self.callzcash('createrawtransaction',[txins, destinations])
+            try:
+                self.plainTextEdit_raw_ms_tx.textChanged.disconnect(self.parserawhex)
+            except:
+                pass
+            self.plainTextEdit_raw_ms_tx.clear()
+            self.plainTextEdit_raw_ms_tx.appendPlainText(rawtrans)
+            self.plainTextEdit_raw_ms_tx.textChanged.connect(self.parserawhex)
+        except:
+            try:
+                self.plainTextEdit_raw_ms_tx.textChanged.disconnect(self.parserawhex)
+            except:
+                pass
+            self.plainTextEdit_raw_ms_tx.clear()
+            self.plainTextEdit_raw_ms_tx.textChanged.connect(self.parserawhex)
+
+    def signrawtransaction(self):
+        rawtrans = self.plainTextEdit_raw_ms_tx.toPlainText()
+        signed = self.callzcash('signrawtransaction', [rawtrans])
+        try:
+            self.plainTextEdit_raw_ms_tx.textChanged.disconnect(self.parserawhex)
+        except:
+            pass
+        self.plainTextEdit_raw_ms_tx.clear()
+        self.plainTextEdit_raw_ms_tx.appendPlainText(signed['hex'])
+        self.plainTextEdit_raw_ms_tx.textChanged.connect(self.parserawhex)
+        if signed['complete']:
+            self.pushButton_ms_broadcast.setEnabled(True)
+        else:
+            self.pushButton_ms_broadcast.setEnabled(False)
+
+
+
+    def importmultisig(self):
+        n = self.spinBox_multisign.value()
+        addresses = str(self.plainTextEdit_multisigkeys.toPlainText()).splitlines()
+        self.pushButton_importmultisig.setEnabled(False)
+        self.update()
+
 
     def generatemultisig(self):
         try:
@@ -114,6 +185,64 @@ class mainwindow(QMainWindow):
             self.plainTextEdit_spendscript.clear()
             self.plainTextEdit_spendscript.textChanged.connect(self.verifymultisig)
 
+    def parserawhex(self):
+        self.pushButton_ms_broadcast.setEnabled(False)
+        rawhex = self.plainTextEdit_raw_ms_tx.toPlainText()
+        res = self.callzcash('decoderawtransaction', [rawhex])
+        try:
+            self.plainTextEdit_to_address_ms.textChanged.disconnect(self.createmultisigtx)
+            self.comboBox_from_addr_ms.currentTextChanged.disconnect(self.createmultisigtx)
+        except:
+            pass
+        self.plainTextEdit_to_address_ms.clear()
+        self.updatesendlist()
+        self.plainTextEdit_to_address_ms.textChanged.connect(self.createmultisigtx)
+        self.comboBox_from_addr_ms.currentTextChanged.connect(self.createmultisigtx)
+        try:
+            inputaddreses = []
+            for vin in res['vin']:
+                inputaddreses += self.callzcash('gettxout', [vin['txid'], vin['vout']])['scriptPubKey']['addresses']
+            if len(set(inputaddreses)) == 1:
+                address = inputaddreses[0]
+                tex = ''
+                if address in self.balances:
+                    tex += self.balances[address]+'\t'
+                alias = self.aliasofaddress(address)
+                if alias != address:
+                    tex += alias +'\t'
+                tex += address
+                try:
+                    self.comboBox_from_addr_ms.currentTextChanged.disconnect(self.createmultisigtx)
+                except:
+                    pass
+                self.comboBox_from_addr_ms.setCurrentText(tex)
+                self.comboBox_from_addr_ms.currentTextChanged.connect(self.createmultisigtx)
+            outputs = res['vout']
+            for output in outputs:
+                adr = output['scriptPubKey']['addresses']
+                if len(adr)>1:
+                    try:
+                        self.plainTextEdit_to_address_ms.textChanged.disconnect(self.createmultisigtx)
+                        self.comboBox_from_addr_ms.currentTextChanged.disconnect(self.createmultisigtx)
+                    except:
+                        pass
+                    self.plainTextEdit_to_address_ms.clear()
+                    self.updatesendlist()
+                    self.plainTextEdit_to_address_ms.textChanged.connect(self.createmultisigtx)
+                    self.comboBox_from_addr_ms.currentTextChanged.connect(self.createmultisigtx)
+                    return
+                value = output['value']
+                if adr[0] !=address:
+                    try:
+                        self.plainTextEdit_to_address_ms.textChanged.disconnect(self.createmultisigtx)
+                        self.comboBox_from_addr_ms.currentTextChanged.disconnect(self.createmultisigtx)
+                    except:
+                        pass
+                    self.plainTextEdit_to_address_ms.appendPlainText(adr[0]+','+str(value))
+                    self.plainTextEdit_to_address_ms.textChanged.connect(self.createmultisigtx)
+                    self.comboBox_from_addr_ms.currentTextChanged.connect(self.createmultisigtx)
+        except:
+            pass
 
     def verifymultisig(self):
         try:
@@ -147,6 +276,15 @@ class mainwindow(QMainWindow):
             self.plainTextEdit_multisigkeys.clear()
             self.plainTextEdit_multisigkeys.textChanged.connect(self.generatemultisig)
 
+    def addmultisigaddrtolist(self):
+        addr = self.comboBox__send_ms_addr.currentText().split()[-1]
+        amount = self.lineEdit_send_ms_amount.text()
+        self.plainTextEdit_to_address_ms.appendPlainText(addr+','+amount)
+
+    def broadcastrawtransaction(self):
+        hex = self.plainTextEdit_raw_ms_tx.toPlainText()
+        self.callzcash('sendrawtransaction', [hex])
+        self.pushButton_ms_broadcast.setEnabled(False)
 
 
     def updateotheraccounts(self):
@@ -202,12 +340,14 @@ class mainwindow(QMainWindow):
     def get_balances(self):
         zaddresses = self.callzcash('z_listaddresses')
         unspent = self.callzcash('listunspent')
-        traddresses = list(set([us['address'] for us in unspent if us['spendable']]))
+        traddresses = list(self.callzcash('getaddressesbyaccount', ['']))
         addresses = zaddresses + traddresses
         bals = {}
         for ad in addresses:
             bal = self.callzcash('z_getbalance', [ad])
             bal = str(bal)
+            if bal == '0E-8':
+                bal = '0.00000000'
             #bal += (14-len(str(bal)))*' '
             bals[ad]=bal
         return bals
@@ -250,6 +390,7 @@ class mainwindow(QMainWindow):
                 address = line.split()[0]
                 alias = line[len(address)+1:].replace('\n','')
                 self.addressesalias[address]=alias
+            self.updatelinesendaccount()
         otheralias = {}
         with open('addresses.ext') as fd:
             lines = fd.readlines()
@@ -298,11 +439,15 @@ class mainwindow(QMainWindow):
 
     def updatelinesendaccount(self):
         self.line_sendaccount1.clear()
+        self.comboBox__send_ms_addr.clear()
         self.line_sendaccount1.addItem('')
+        self.comboBox__send_ms_addr.addItem('')
         for al in self.addressesalias:
             self.line_sendaccount1.addItem(self.aliasofaddress(al)+'\t'+al)
+            self.comboBox__send_ms_addr.addItem(self.aliasofaddress(al)+'\t'+al)
         for al in self.otheralias:
             self.line_sendaccount1.addItem(self.otheralias[al]+'\t'+al)
+            self.comboBox__send_ms_addr.addItem(self.otheralias[al]+'\t'+al)
 
     def get_send_data(self):
         send_data = []
@@ -385,39 +530,9 @@ class mainwindow(QMainWindow):
         return send_data
 
     def update(self):
-        tocall = set([])
-        transactions = self.gettransactions()
-        if transactions != self.transactions:
-            self.transactions = transactions
-            tocall.add(self.updatehistorial)
-        aliases = self.get_aliases()
-        if self.tableWidget_ownaddresses.rowCount()>0 and self.addressesalias != aliases:
-            self.addressesalias = aliases
-            tocall.add(self.updatereceive)
-            tocall.add(self.updatesendlist)
-            tocall.add(self.updatetrs)
-            tocall.add(self.updatehistorial)
-            tocall.add(self.savealiases)
-            tocall.add(self.updatelinesendaccount)
-        utxos = self.get_utxos()
-        if utxos != self.utxos:
-            tocall.add(self.updatetrs)
-            self.utxos = utxos
-        shreceived = self.get_shreceieved()
-        if shreceived != self.shreceived:
-            self.shreceived = shreceived
-            tocall.add(self.updatetrs)
-        balances = self.get_balances()
-        if balances != self.balances:
-            self.balances = balances
-            tocall.add(self.updatesendlist)
-            tocall.add(self.updatereceive)
-            tocall.add(self.updatealiases)
-        for c in tocall:
-            c.__call__()
-        self.updatestatus()
-        self.statusBar.showMessage('Conected to {}:{}'.format(self.line_host.text(), self.line_port.text()))
+
         try:
+            tocall = set([])
             transactions = self.gettransactions()
             if transactions != self.transactions:
                 self.transactions = transactions
@@ -455,9 +570,25 @@ class mainwindow(QMainWindow):
     def updatesendlist(self):
         self.sendadrresses = []
         self.comboBox_sendaccounts.clear()
+        self.comboBox__send_ms_addr.clear()
+        self.comboBox_from_addr_ms.clear()
+        self.comboBox_from_addr_ms.addItem('')
+        self.comboBox__send_ms_addr.addItem('')
         for bal in self.balances:
             self.comboBox_sendaccounts.addItem(self.balances[bal]+ '\t' +self.aliasofaddress(bal))
+            if self.aliasofaddress(bal) != bal:
+                self.comboBox__send_ms_addr.addItem(self.balances[bal]+ '\t' +self.aliasofaddress(bal) + '\t' + bal)
+            else:
+                self.comboBox__send_ms_addr.addItem(self.balances[bal]+'\t\t' + bal)
             self.sendadrresses.append(bal)
+            if not bal[0] == 'z' and not bal[1] in '1m':
+                alias = self.aliasofaddress(bal)
+                if alias == bal:
+                    self.comboBox_from_addr_ms.addItem(self.balances[bal]+ '\t' + bal)
+                else:
+                    self.comboBox_from_addr_ms.addItem(self.balances[bal]+ '\t' +alias+ '\t' + bal)
+
+
 
     def send(self):
         params = self.get_send_data()
@@ -486,13 +617,14 @@ class mainwindow(QMainWindow):
             self.statustext.clear()
 
     def newtraddr(self):
-        self.callzcash('getnewaddress')
         self.listaddresses_receive.clear()
+        self.updatereceive()
         self.update()
 
     def newshaddr(self):
         self.callzcash('z_getnewaddress')
         self.listaddresses_receive.clear()
+        self.updatereceive()
         self.update()
 
     def torconnect(self):
@@ -536,7 +668,7 @@ class mainwindow(QMainWindow):
                 address = tx['address']
             else:
                 address = False
-            tx2 = [tx['category'], tx['txid'], tx['time'], address, tx['amount']]
+            tx2 = [tx['category'], tx['txid'], tx['time'], address, tx['amount'], colorfromconfs(tx['confirmations'])]
             trans.append(tx2)
         return trans
 
@@ -554,17 +686,21 @@ class mainwindow(QMainWindow):
             table.insertRow(rw)
             item = QTableWidgetItem(tx[1])
             item.setFlags(Qt.ItemFlags(97))
+            item.setBackground(QBrush(QColor(tx[-1][0],tx[-1][1],tx[-1][2])))
             table.setItem(rw, 3, item)
             timet = time.strftime('%b %d %Y, %H:%M', time.localtime(tx[2]))
             item = QTableWidgetItem(timet)
             item.setFlags(Qt.ItemFlags(97))
+            item.setBackground(QBrush(QColor(tx[-1][0],tx[-1][1],tx[-1][2])))
             table.setItem(rw, 0, item)
             if tx[2]:
                 item = QTableWidgetItem(self.aliasofaddress(tx[3]))
                 item.setFlags(Qt.ItemFlags(97))
+                item.setBackground(QBrush(QColor(tx[-1][0],tx[-1][1],tx[-1][2])))
                 table.setItem(rw, 1, item)
             item = QTableWidgetItem(str(tx[4]))
             item.setFlags(Qt.ItemFlags(97))
+            item.setBackground(QBrush(QColor(tx[-1][0],tx[-1][1],tx[-1][2])))
             table.setItem(rw, 2, item)
         #self.transtable_input.resizeColumnsToContents()
         #self.transtable_output.resizeColumnsToContents()
