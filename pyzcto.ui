@@ -1097,7 +1097,12 @@
                       </item>
                       <item>
                        <property name="text">
-                        <string>socks</string>
+                        <string>socks4</string>
+                       </property>
+                      </item>
+                      <item>
+                       <property name="text">
+                        <string>socks5</string>
                        </property>
                       </item>
                      </widget>

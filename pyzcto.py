@@ -629,6 +629,38 @@ class mainwindow(QMainWindow):
 
     def torconnect(self):
         if self.torconnectbutton.text() == '&Connect':
+            with open('torrc', 'w') as fd:
+                fd.write('SOCKSPort 10050\n')
+                if self.proxybutton.isChecked():
+                    proxyurl = self.proxyaddress.text()
+                    proxyport = self.proxyport.text()
+                    proxyuser = self.proxyuser.text()
+                    proxypass = self.proxypasswd.text()
+                    if self.proxytype.currentText()=='http':
+                        if not proxyport:
+                            proxyport = 80
+                        fd.write('HTTPProxy {}:{}\n'.format(proxyurl,proxyport))
+                        if proxyuser or proxypass:
+                            fd.write('HTTPProxyAuthenticator {}:{}\n'.format(proxyuser,proxypass))
+                    elif self.proxytype.currentText() == 'https':
+                        if not proxyport:
+                            proxyport = 443
+                        fd.write('HTTPSProxy {}:{}\n'.format(proxyurl,proxyport))
+                        if proxyuser or proxypass:
+                            fd.write('HTTPSProxyAuthenticator {}:{}\n'.format(proxyuser,proxypass))
+                    elif self.proxytype.currentText() == 'socks4':
+                        if not proxyport:
+                            proxyport = 1080
+                        fd.write('Socks4Proxy {}:{}\n'.format(proxyurl,proxyport))
+                    elif self.proxytype.currentText() == 'socks5':
+                        if not proxyport:
+                            proxyport = 1080
+                        fd.write('Socks5Proxy {}:{}\n'.format(proxyurl,proxyport))
+                        if proxyuser or proxypass:
+                            fd.write('Socks5ProxyUsername {}\n'.format(proxyuser))
+                            fd.write('Socks5ProxyPassword {}\n'.format(proxypass))
+                fd.write('HiddenServiceDir ./hidden_service/ \n')
+                fd.write('HiddenServicePort 8232 127.0.0.1:8232\n')
             self.torproc.setProcessChannelMode(QProcess.MergedChannels)
             self.torproc.start('tor', ['-f', 'torrc'])
             self.torproc.readyReadStandardOutput.connect(self.updatetor)
