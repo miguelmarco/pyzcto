@@ -660,7 +660,7 @@ class mainwindow(QMainWindow):
                             fd.write('Socks5ProxyUsername {}\n'.format(proxyuser))
                             fd.write('Socks5ProxyPassword {}\n'.format(proxypass))
                 fd.write('HiddenServiceDir ./hidden_service/ \n')
-                fd.write('HiddenServicePort 8232 127.0.0.1:8232\n')
+                fd.write('HiddenServicePort 80 127.0.0.1:{}\n'.format(self.line_port.text()))
             self.torproc.setProcessChannelMode(QProcess.MergedChannels)
             self.torproc.start('tor', ['-f', 'torrc'])
             self.torproc.readyReadStandardOutput.connect(self.updatetor)
