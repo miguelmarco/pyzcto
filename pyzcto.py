@@ -682,12 +682,14 @@ class mainwindow(QMainWindow):
             self.onionlabelname.show()
             self.onionlabel.setPixmap(qrc.scaled(self.onionlabel.size(), Qt.KeepAspectRatio))
             self.onionlabel.show()
+            self.timer.setInterval(60000) # reduce frequecy of updating to reduce interference with requests through tor
         else:
             self.torproc.terminate()
             self.torproc.waitForFinished()
             self.torconnectbutton.setText('&Connect')
             self.onionlabel.hide()
             self.onionlabelname.hide()
+            self.timer.setInterval(2000) # restore update frequency when there is no possible interference with requests through tor
 
     def updatetor(self):
         self.torconsole.appendPlainText(str(self.torproc.readAllStandardOutput()))
