@@ -2,7 +2,7 @@
 
 import sys
 from PyQt5.QtCore import Qt, QProcess, QTimer
-from PyQt5.QtWidgets import QWidget, QApplication, QDialog, QMainWindow, QTableWidgetItem, QHeaderView
+from PyQt5.QtWidgets import QWidget, QApplication, QDialog, QMainWindow, QTableWidgetItem, QHeaderView, QMenu, QMessageBox
 from PyQt5.QtGui import QPicture, QPixmap,QImage, QBrush, QColor
 from PyQt5.uic import loadUi
 import requests
@@ -85,8 +85,26 @@ class mainwindow(QMainWindow):
         self.timer = QTimer()
         self.timer.timeout.connect(self.update)
         self.timer.start(2000)
+        self.tableWidget_ownaddresses.setContextMenuPolicy(Qt.CustomContextMenu)
+        self.tableWidget_ownaddresses.customContextMenuRequested.connect(self.showpkmenu)
         self.update()
         self.show()
+
+    def showpkmenu(self, position):
+        item = self.tableWidget_ownaddresses.currentItem()
+        address = str(item.text())
+        if address[:2] in ['tm', 't1']:
+            req = self.callzcash('validateaddress',[address])
+            if not 'pubkey' in req:
+                return
+            key = req['pubkey']
+            menu = QMenu()
+            action = menu.addAction("show public key")
+            messagebox = QMessageBox()
+            messagebox.setText(key)
+            messagebox.setWindowTitle("")
+            action.triggered.connect(messagebox.exec_)
+            menu.exec_(self.tableWidget_shaddr.viewport().mapToGlobal(position))
 
     def createmultisigtx(self):
         try:

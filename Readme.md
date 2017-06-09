@@ -25,6 +25,8 @@ It should open a window, and show in the bottom bar the message "connected to 12
 
 This tab shows your addresses and a list of external addresses you want to keep track of. You can edit the "Alias" column to help you remember each address.
 
+If you right-click over a transparent address, you have the option of showing the corresponding public key. It will be useful if you want to deal with multisig addresses (see later).
+
 ### The "Available" tab
 
 Here you can see the available utxos (think of them as coins) of your transparent addresses, and the received transactions to your shielded addresses. The color deppends on the confirmations they have: they start at red when there are very few confirmations, and turn to green as they receive more confirmations. You can also see your total balance.
@@ -69,9 +71,9 @@ That way, the only information that will be published is that somebody made a pa
 
 #### Create/Import
 
-If you want to create an n of m multisig address, paste m transparent addresses (one per line) in the first text edit area (typically, one will be yours and the rest will be addresses of the other signers), and select the number of required signatures. If they are correct, you will see that the "Address (to send funds to)" and "Redeem script" will be filled, and the "Import to wallet" button would be enabled. You can push the button to include the multisig address in your wallet, and copy the redeem script to send it to the other signers. The redeem script is what will allow them to reconstruct the process of creating the multisig address in order to spend form it.
+If you want to create an n of m multisig address, paste the public keys of m transparent addresses (one per line) in the first text edit area (typically, one will be yours and the rest will be addresses of the other signers), and select the number of required signatures. In the case of addresses that are already in your wallet, you can paste directly the address, but otherwise you will need the public key itself (they can be obtained with a right click in the "Addresses" tab). If they are correct, you will see that the "Address (to send funds to)" and "Redeem script" will be filled, and the "Import to wallet" button would be enabled. You can push the button to include the multisig address in your wallet, and copy the redeem script to send it to the other signers. The redeem script is what will allow them to reconstruct the process of creating the multisig address in order to spend form it.
 
-If you received a redeem script from somebody else, just paste it in the "redeem script" field, and the rest of the fields should be filled automatically. Check that it is correct (in particular, at least one of the addresses should be yours) and import the multisig address to your wallet as before.
+If you received a redeem script from somebody else, just paste it in the "redeem script" field, and the rest of the fields should be filled automatically. Check that it is correct (in particular, at least one of the addresses should be yours, and the rest should correspond to the other signers) and import the multisig address to your wallet as before.
 
 Now the address can be funded by sending funds to it just like any other address.
 
