@@ -635,6 +635,7 @@ class mainwindow(QMainWindow):
             self.statustext.clear()
 
     def newtraddr(self):
+        self.callzcash('getnewaddress')
         self.listaddresses_receive.clear()
         self.updatereceive()
         self.update()
