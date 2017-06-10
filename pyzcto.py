@@ -173,10 +173,11 @@ class mainwindow(QMainWindow):
         res = self.callzcash('addmultisigaddress', [n,addresses])
         multisigaddress = str(self.lineEdit_multisigaddress.text())
         messagebox = QMessageBox()
-        messagebox.setText("Importing address. The blockchain will be rescanned now, which can take a few minutes; during that time the program might be unresponsive")
+        messagebox.setText("Importing address.\n\nDo you want to rescan the blockchain? \n\n Rescanning the blockchain allows to use the funds sent to the multisig address before this moment but will take several minutes. The program will be irresponsive during that time.\n\n If you don't rescan the blockchain, you will still be able to create payment orders for the funds that will be received in the future, or to sign orders created by other signers.")
         messagebox.setWindowTitle("")
-        messagebox.exec_()
-        self.callzcash('importaddress', [multisigaddress])
+        messagebox.setStandardButtons(QMessageBox.Yes | QMessageBox.No)
+        rescan = messagebox.exec_() == QMessageBox.Yes
+        self.callzcash('importaddress', [multisigaddress, "", rescan])
 
         self.update()
 
@@ -283,7 +284,10 @@ class mainwindow(QMainWindow):
             except:
                 pass
             self.plainTextEdit_multisigkeys.clear()
-            for l in res['addresses']:
+            asm = res['asm'].split()
+            if not asm[-1] == "OP_CHECKMULTISIG":
+                raise ValueError("Not a multisig script")
+            for l in asm[1:-2]:
                 self.plainTextEdit_multisigkeys.appendPlainText(l)
             self.plainTextEdit_multisigkeys.textChanged.connect(self.generatemultisig)
             self.spinBox_multisign.valueChanged.disconnect(self.generatemultisig)
@@ -292,7 +296,7 @@ class mainwindow(QMainWindow):
             self.spinBox_multisign.valueChanged.connect(self.generatemultisig)
             self.lineEdit_multisigaddress.setText(res['p2sh'])
             availableaddresses = self.callzcash('getaddressesbyaccount', [""])
-            if res['p2sh'] in availableaddresses:
+            if res['p2sh'] in availableaddresses and any(ad in availableaddresses for ad in res['addresses']):
                 self.pushButton_importmultisig.setEnabled(False)
             else:
                 self.pushButton_importmultisig.setEnabled(True)

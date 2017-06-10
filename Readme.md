@@ -75,7 +75,7 @@ If you want to create an n of m multisig address, paste the public keys of m tra
 
 If you received a list of public addresses from somebody else, just paste them in the "Addresses/Keys" field, choose the number of minimal transactions, and the rest of the fields should be filled automatically. Check that it is correct (in particular, at least one of the addresses should be yours, and the rest should correspond to the other signers, the address and redeem script should match the ones you got from your cosigner) and import the multisig address to your wallet as before.
 
-Note that, when you push the "Import" button, the whole blockchain must be rescanned, which will take some time (expect several minutes at least). A dialog will appear warning you about this.
+Note that, when you push the "Import" button, a dialog will appear asking if you want to rescan the whole blockchain. If you decide to rescan it, it will take some time (expect several minutes at least), during which the program will be irresponsive. Rescanning the blockchain is necessary for the wallet to be aware of the funds sent to this address before this moment. If you are sure that the multisig address has not yet been funded (for example, because you just created it), or rely on other signer to create the payment orders that you will just sign, it is probably better to choose not to rescan.
 
 Now the address can be funded by sending funds to it just like any other address.
 
