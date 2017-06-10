@@ -104,7 +104,7 @@ class mainwindow(QMainWindow):
             messagebox.setText(key)
             messagebox.setWindowTitle("")
             action.triggered.connect(messagebox.exec_)
-            menu.exec_(self.tableWidget_shaddr.viewport().mapToGlobal(position))
+            menu.exec_(self.tableWidget_ownaddresses.viewport().mapToGlobal(position))
 
     def createmultisigtx(self):
         try:
