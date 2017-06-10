@@ -122,13 +122,13 @@ class mainwindow(QMainWindow):
             txins = []
             while totalin < totalout:
                 txout = txouts.pop()
-                if txout['spendable']:
-                    totalin += txout['amount']
-                    txid = txout['txid']
-                    vout = txout['vout']
-                    txins.append({'txid':txid, 'vout':vout})
+                totalin += txout['amount']
+                txid = txout['txid']
+                vout = txout['vout']
+                txins.append({'txid':txid, 'vout':vout})
             change = totalin-totalout
-            destinations[fromaddress] = change
+            if change > 0:
+                destinations[fromaddress] = change
             rawtrans = self.callzcash('createrawtransaction',[txins, destinations])
             try:
                 self.plainTextEdit_raw_ms_tx.textChanged.disconnect(self.parserawhex)
@@ -165,7 +165,19 @@ class mainwindow(QMainWindow):
     def importmultisig(self):
         n = self.spinBox_multisign.value()
         addresses = str(self.plainTextEdit_multisigkeys.toPlainText()).splitlines()
+        for i in range(len(addresses)):
+            if addresses[i] in self.balances:
+                pubkey = self.callzcash('validateaddress', [addresses[i]])
+                addresses[i] = pubkey['pubkey']
         self.pushButton_importmultisig.setEnabled(False)
+        res = self.callzcash('addmultisigaddress', [n,addresses])
+        multisigaddress = str(self.lineEdit_multisigaddress.text())
+        messagebox = QMessageBox()
+        messagebox.setText("Importing address. The blockchain will be rescanned now, which can take a few minutes; during that time the program might be unresponsive")
+        messagebox.setWindowTitle("")
+        messagebox.exec_()
+        self.callzcash('importaddress', [multisigaddress])
+
         self.update()
 
 
@@ -301,7 +313,7 @@ class mainwindow(QMainWindow):
 
     def broadcastrawtransaction(self):
         hex = self.plainTextEdit_raw_ms_tx.toPlainText()
-        self.callzcash('sendrawtransaction', [hex])
+        res = self.callzcash('sendrawtransaction', [hex])
         self.pushButton_ms_broadcast.setEnabled(False)
 
 
@@ -872,7 +884,8 @@ class mainwindow(QMainWindow):
         timeout = 600
         jsondata = simplejson.dumps({'version':'2', 'method': method, 'params': params, 'id': 0})
         r = requests.post(url, auth=(user,passwd), data=jsondata, timeout=timeout)
-        return simplejson.loads(r.text, use_decimal=True)['result']
+        res = simplejson.loads(r.text, use_decimal=True)['result']
+        return res
 
 def colorfromconfs(confs):
     if confs>25:
