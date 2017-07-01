@@ -81,23 +81,44 @@ class mainwindow(QMainWindow):
         self.transactions = []
         self.receiveaddresses = []
         self.sendadrresses = []
+        self.pubkeys = {}
         self.readaliasesfromfile()
         self.timer = QTimer()
         self.timer.timeout.connect(self.update)
         self.timer.start(2000)
         self.tableWidget_ownaddresses.setContextMenuPolicy(Qt.CustomContextMenu)
         self.tableWidget_ownaddresses.customContextMenuRequested.connect(self.showpkmenu)
+        self.pushButton_newpubkey.clicked.connect(self.newpubkey)
         self.update()
         self.show()
+
+    def newpubkey(self):
+        try:
+            nlines = len(self.plainTextEdit_multisigkeys.toPlainText().splitlines())
+            if len(nlines)>15:
+                return
+            newaddress = self.callzcash('getnewaddress')
+            pubkey = self.callzcash('validateaddress',[newaddress])['pubkey']
+            self.pubkeys[newaddress]=pubkey
+            plaintext = self.plainTextEdit_multisigkeys.toPlainText()
+            while len(plaintext) >= 2 and plaintext[-2] == '\n':
+                plaintext = plaintext[:-1]
+            if len(plaintext) >= 1 and plaintext[-1] != '\n':
+                plaintext = plaintext + '\n'
+            plaintext = plaintext + pubkey
+            self.plainTextEdit_multisigkeys.setPlainText(plaintext)
+
+        except:
+            pass
+
 
     def showpkmenu(self, position):
         item = self.tableWidget_ownaddresses.currentItem()
         address = str(item.text())
         if address[:2] in ['tm', 't1']:
-            req = self.callzcash('validateaddress',[address])
-            if not 'pubkey' in req:
+            if not address in self.pubkeys:
                 return
-            key = req['pubkey']
+            key = self.pubkeys[address]
             menu = QMenu()
             action = menu.addAction("show public key")
             messagebox = QMessageBox()
@@ -166,9 +187,8 @@ class mainwindow(QMainWindow):
         n = self.spinBox_multisign.value()
         addresses = str(self.plainTextEdit_multisigkeys.toPlainText()).splitlines()
         for i in range(len(addresses)):
-            if addresses[i] in self.balances:
-                pubkey = self.callzcash('validateaddress', [addresses[i]])
-                addresses[i] = pubkey['pubkey']
+            if addresses[i] in self.pubkeys:
+                addresses[i] = self.pubkeys[addresses[i]]
         self.pushButton_importmultisig.setEnabled(False)
         res = self.callzcash('addmultisigaddress', [n,addresses])
         multisigaddress = str(self.lineEdit_multisigaddress.text())
@@ -186,6 +206,8 @@ class mainwindow(QMainWindow):
         try:
             n = self.spinBox_multisign.value()
             addresses = str(self.plainTextEdit_multisigkeys.toPlainText()).splitlines()
+            totkeys = len(addresses)
+            selfkeys = len([a for a in addresses if a in self.pubkeys.values()])
             try:
                 self.spinBox_multisign.valueChanged.disconnect(self.generatemultisig)
             except:
@@ -206,6 +228,7 @@ class mainwindow(QMainWindow):
             self.plainTextEdit_spendscript.clear()
             self.plainTextEdit_spendscript.appendPlainText(res['redeemScript'])
             self.plainTextEdit_spendscript.textChanged.connect(self.verifymultisig)
+            self.label_nsignatures.setText('Own signatures: {} of {}'.format(selfkeys, totkeys))
         except:
             try:
                 self.plainTextEdit_spendscript.textChanged.disconnect(self.verifymultisig)
@@ -214,6 +237,7 @@ class mainwindow(QMainWindow):
             self.lineEdit_multisigaddress.clear()
             self.pushButton_importmultisig.setEnabled(False)
             self.plainTextEdit_spendscript.clear()
+            self.label_nsignatures.setText('Invalid keys')
             self.plainTextEdit_spendscript.textChanged.connect(self.verifymultisig)
 
     def parserawhex(self):
@@ -826,6 +850,8 @@ class mainwindow(QMainWindow):
                 typ = 'Shielded'
             elif ad[1] in '1m':
                 typ = 'Transparent'
+                pubkey = self.callzcash('validateaddress', [ad])['pubkey']
+                self.pubkeys[ad] = pubkey
             elif ad[1] in '23':
                 typ = 'Multisig'
             item = QTableWidgetItem(typ)
