@@ -91,11 +91,13 @@ If you receive a payment order, paste it in the "payment order" field and the re
 
 ### The "Tor" tab
 
-Here you can start a tor .onion service that would allow you to access your wallet from your android phone with the [Zcash Pannel](https://github.com/miguelmarco/ZcashPannel) app. If you can connect directly to the tor network, just click on the "connect" button. A qr code should appear and some output appear should appear in the bottom text area. If you see the message "Bootstrapped 100%: Done" it means that you are connected to the tor network. You can setup your ZcashPannel app scanning the QR code.
+Here you can start a tor .onion service that would allow you to access your wallet from your android phone with the [Zcash Pannel](https://github.com/miguelmarco/ZcashPannel) app. If you can connect directly to the tor network, just click on the "connect" button. A qr code should appear and some output appear should appear in the bottom text area. If you see the message "Bootstrapped 100%: Done" it means that you are connected to the tor network. You can setup your ZcashPannel app scanning the QR code that is shown by the "QR for Zcashpannel" button.
 
 Notice that the .onion service can take some properly setup. If you cannot connect from your android app immediately, just wait a minute or so and try again.
 
 If you need a proxy to connect to the tor network, just check the corresponding checkbox and configure it. Even though the interface shows some options for using bridges, the program does not use them at the moment.
+
+If you check the "Use stealth address" option, a stealth onion address will be created. Stealth onion addresses are more secure (since they require a preshared cookie just to stablish the connection, even before the username/password authentication), but require an extra setup on your android phone. In order to configure it, open Orbot and go to the menu in the top right corner. Select "Hidden Services" -> "Client cookies" and click the top right menu again. Then select "Read from QR" and scan the qr code that is shown by pyzcto with the "QR for Orbot" button. After that, you have to restart orbot and will be able to connect to your computer that is running pyzcto.
 
 ### The "Zcash" tab
 

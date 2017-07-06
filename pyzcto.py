@@ -89,6 +89,16 @@ class mainwindow(QMainWindow):
         self.tableWidget_ownaddresses.setContextMenuPolicy(Qt.CustomContextMenu)
         self.tableWidget_ownaddresses.customContextMenuRequested.connect(self.showpkmenu)
         self.pushButton_newpubkey.clicked.connect(self.newpubkey)
+        self.pushButton_showorbotqr.clicked.connect(self.showorbotqr)
+        self.pushButton_showzcpqr.clicked.connect(self.showzcpqr)
+        self.pushButton_hideqr.clicked.connect(self.hideqr)
+        try:
+            with open('./hidden_service/hostname') as fd:
+                line = fd.readline()
+                if len(line.split()) > 1:
+                    self.checkBox_stealth.setChecked(True)
+        except:
+            pass
         self.update()
         self.show()
 
@@ -720,6 +730,8 @@ class mainwindow(QMainWindow):
                             fd.write('Socks5ProxyPassword {}\n'.format(proxypass))
                 fd.write('HiddenServiceDir ./hidden_service/ \n')
                 fd.write('HiddenServicePort 80 127.0.0.1:{}\n'.format(self.line_port.text()))
+                if self.checkBox_stealth.isChecked():
+                    fd.write('HiddenServiceAuthorizeClient stealth zcashpannel\n')
             self.torproc.setProcessChannelMode(QProcess.MergedChannels)
             self.torproc.start('tor', ['-f', 'torrc'])
             self.torproc.readyReadStandardOutput.connect(self.updatetor)
@@ -727,28 +739,58 @@ class mainwindow(QMainWindow):
             self.torconnectbutton.setText('&Disconnect')
             while not os.path.isfile('./hidden_service/hostname'):
                 time.sleep(0.5)
-            fd = open('./hidden_service/hostname')
-            oniondom = fd.readline()
-            fd.close()
+            if self.checkBox_stealth.isChecked():
+                self.pushButton_showorbotqr.setEnabled(True)
+            self.pushButton_showzcpqr.setEnabled(True)
+            self.pushButton_hideqr.setEnabled(True)
+            self.checkBox_stealth.setEnabled(False)
 
-            username = str(self.line_user.text())
-            password = str(self.line_password.text())
-            img = qrcode.make(username+':'+password+'@'+oniondom)
-            img.save('qrcode.png', 'PNG')
-            qrc = QPixmap('qrcode.png')
-            os.remove('qrcode.png')
-            self.onionlabelname.setText(username+':'+password+'@'+oniondom)
-            self.onionlabelname.show()
-            self.onionlabel.setPixmap(qrc.scaled(self.onionlabel.size(), Qt.KeepAspectRatio))
-            self.onionlabel.show()
             self.timer.setInterval(60000) # reduce frequecy of updating to reduce interference with requests through tor
         else:
             self.torproc.terminate()
             self.torproc.waitForFinished()
             self.torconnectbutton.setText('&Connect')
-            self.onionlabel.hide()
-            self.onionlabelname.hide()
+            self.pushButton_showorbotqr.setEnabled(False)
+            self.pushButton_showzcpqr.setEnabled(False)
+            self.pushButton_hideqr.setEnabled(False)
+            self.checkBox_stealth.setEnabled(True)
             self.timer.setInterval(2000) # restore update frequency when there is no possible interference with requests through tor
+
+    def showzcpqr(self):
+        fd = open('./hidden_service/hostname')
+        oniondom = fd.readline().split()[0]
+        fd.close()
+        username = str(self.line_user.text())
+        password = str(self.line_password.text())
+        img = qrcode.make(username+':'+password+'@'+oniondom)
+        img.save('qrcode.png', 'PNG')
+        qrc = QPixmap('qrcode.png')
+        os.remove('qrcode.png')
+        self.onionlabelname.setText(username+':'+password+'@'+oniondom)
+        self.onionlabelname.show()
+        self.onionlabel.setPixmap(qrc.scaled(self.onionlabel.size(), Qt.KeepAspectRatio))
+        self.onionlabel.show()
+
+    def showorbotqr(self):
+        fd = open('./hidden_service/hostname')
+        line = fd.readline()
+        oniondom =line.split()[0]
+        cookie = line.split()[1]
+        fd.close()
+        jsonstring = '{'+'"auth_cookie_value": "{}", "domain":"{}"'.format(cookie, oniondom)+'}'
+        img = qrcode.make(jsonstring)
+        img.save('qrcode.png', 'PNG')
+        qrc = QPixmap('qrcode.png')
+        os.remove('qrcode.png')
+        self.onionlabelname.setText(jsonstring)
+        self.onionlabelname.show()
+        self.onionlabel.setPixmap(qrc.scaled(self.onionlabel.size(), Qt.KeepAspectRatio))
+        self.onionlabel.show()
+
+    def hideqr(self):
+        self.onionlabel.hide()
+        self.onionlabelname.hide()
+
 
     def updatetor(self):
         self.torconsole.appendPlainText(str(self.torproc.readAllStandardOutput()))
