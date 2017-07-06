@@ -95,7 +95,7 @@ class mainwindow(QMainWindow):
     def newpubkey(self):
         try:
             nlines = len(self.plainTextEdit_multisigkeys.toPlainText().splitlines())
-            if len(nlines)>15:
+            if nlines>15:
                 return
             newaddress = self.callzcash('getnewaddress')
             pubkey = self.callzcash('validateaddress',[newaddress])['pubkey']
@@ -107,9 +107,9 @@ class mainwindow(QMainWindow):
                 plaintext = plaintext + '\n'
             plaintext = plaintext + pubkey
             self.plainTextEdit_multisigkeys.setPlainText(plaintext)
-
         except:
             pass
+
 
 
     def showpkmenu(self, position):
@@ -850,8 +850,10 @@ class mainwindow(QMainWindow):
                 typ = 'Shielded'
             elif ad[1] in '1m':
                 typ = 'Transparent'
-                pubkey = self.callzcash('validateaddress', [ad])['pubkey']
-                self.pubkeys[ad] = pubkey
+                vali =  self.callzcash('validateaddress', [ad])
+                if vali['ismine']:
+                    pubkey =vali['pubkey']
+                    self.pubkeys[ad] = pubkey
             elif ad[1] in '23':
                 typ = 'Multisig'
             item = QTableWidgetItem(typ)
