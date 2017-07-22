@@ -319,7 +319,7 @@ class mainwindow(QMainWindow):
                 pass
             self.plainTextEdit_multisigkeys.clear()
             asm = res['asm'].split()
-            if not asm[-1] == "OP_CHECKMULTISIG":
+            if not asm[-1] == "OP_CHECKMULTISIG" or not res['type']=='multisig':
                 raise ValueError("Not a multisig script")
             for l in asm[1:-2]:
                 self.plainTextEdit_multisigkeys.appendPlainText(l)
