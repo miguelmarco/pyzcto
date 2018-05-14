@@ -30,8 +30,8 @@ class mainwindow(QMainWindow):
         passlines = [l for l in fdl if 'rpcpassword' in l]
         if not userlines or not passlines:
             raise Error('setup rpcuser and rpcpassword in zcash.conf')
-        username = userlines[-1].replace(' ', '').split('=')[1]
-        password = passlines[-1].replace(' ', '').split('=')[1]
+        username = userlines[-1].replace(' ', '').split('=', 1)[1]
+        password = passlines[-1].replace(' ', '').split('=', 1)[1]
         self.line_user.setText(username.replace('\n',''))
         self.line_password.setText(password.replace('\n',''))
         self.torproc = QProcess()
