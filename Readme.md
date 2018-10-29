@@ -53,6 +53,16 @@ Example:
 
 tmQPikvLZxaV76XR7rDuKLuKNfZ2Gw2HjwZ,2.56 would send 2.56 zcash to the address tmQPikvLZxaV76XR7rDuKLuKNfZ2Gw2HjwZ and so on.
 
+#### Sapling addresses.
+
+In the last zcash upgrade (called sapling), new shielded addresses were created. The new addresses allow much faster 
+shielded transactions and require much less RAM. The new shielded addresses start with 'zs', whereas the old ones start 
+with 'zc'. Now wevery time you request a new shielded address, a zs-address will be created, so you can take advantage of 
+the faster transactions. However, it is not possible to send unds from a zc-address to a zs-address (this is a conscious 
+decission to audit the total money supply). The way to do such a transaction is through a intermediate transparent 
+address. Eventually the zc-addresses might be deprecated, so at some point you should move your funds to zs addresses. 
+That will reveal the amount that was transfered, so consider carefully the privacy implications.
+
 ### The "Receive" tab
 
 Just select one of you addresses, an amount and a comment (optional), and a QR code with the request will be shown. You will also see the encoded request in the bottom (which you can copy and send to other person to request that payment).
