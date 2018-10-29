@@ -85,7 +85,7 @@ class mainwindow(QMainWindow):
         self.readaliasesfromfile()
         self.timer = QTimer()
         self.timer.timeout.connect(self.update)
-        self.timer.start(2000)
+        self.timer.start(10000)
         self.tableWidget_ownaddresses.setContextMenuPolicy(Qt.CustomContextMenu)
         self.tableWidget_ownaddresses.customContextMenuRequested.connect(self.showpkmenu)
         self.pushButton_newpubkey.clicked.connect(self.newpubkey)
@@ -691,7 +691,7 @@ class mainwindow(QMainWindow):
         self.update()
 
     def newshaddr(self):
-        self.callzcash('z_getnewaddress')
+        self.callzcash('z_getnewaddress', ['sapling'])
         self.listaddresses_receive.clear()
         self.updatereceive()
         self.update()
